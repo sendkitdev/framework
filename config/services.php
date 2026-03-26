@@ -23,7 +23,7 @@ return [
     ],
 
     'sendkit' => [
-        'key' => env('SENDKIT_API_KEY'),
+        'key' => env('SENDKIT_KEY'),
     ],
 
     'ses' => [
