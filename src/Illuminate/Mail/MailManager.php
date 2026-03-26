@@ -10,6 +10,7 @@ use Illuminate\Log\LogManager;
 use Illuminate\Mail\Transport\ArrayTransport;
 use Illuminate\Mail\Transport\LogTransport;
 use Illuminate\Mail\Transport\ResendTransport;
+use Illuminate\Mail\Transport\SendKitTransport;
 use Illuminate\Mail\Transport\SesTransport;
 use Illuminate\Mail\Transport\SesV2Transport;
 use Illuminate\Support\Arr;
@@ -18,6 +19,7 @@ use Illuminate\Support\Str;
 use InvalidArgumentException;
 use Psr\Log\LoggerInterface;
 use Resend;
+use SendKit\SendKit;
 use Symfony\Component\HttpClient\HttpClient;
 use Symfony\Component\Mailer\Bridge\Mailgun\Transport\MailgunTransportFactory;
 use Symfony\Component\Mailer\Bridge\Postmark\Transport\PostmarkTransportFactory;
@@ -318,6 +320,19 @@ class MailManager implements FactoryContract
     {
         return new ResendTransport(
             Resend::client($config['key'] ?? $this->app['config']->get('services.resend.key')),
+        );
+    }
+
+    /**
+     * Create an instance of the SendKit Transport driver.
+     *
+     * @param  array  $config
+     * @return \Illuminate\Mail\Transport\SendKitTransport
+     */
+    protected function createSendkitTransport(array $config)
+    {
+        return new SendKitTransport(
+            SendKit::client($config['key'] ?? $this->app['config']->get('services.sendkit.key')),
         );
     }
 
