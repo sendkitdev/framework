@@ -6,11 +6,11 @@ use Exception;
 use SendKit\Client;
 use Symfony\Component\Mailer\Envelope;
 use Symfony\Component\Mailer\Exception\TransportException;
+use Symfony\Component\Mailer\Header\MetadataHeader;
 use Symfony\Component\Mailer\SentMessage;
 use Symfony\Component\Mailer\Transport\AbstractTransport;
 use Symfony\Component\Mime\Address;
 use Symfony\Component\Mime\Email;
-use Symfony\Component\Mime\Header\MetadataHeader;
 use Symfony\Component\Mime\MessageConverter;
 
 class SendKitTransport extends AbstractTransport
