@@ -46,6 +46,31 @@ class MailSendKitTransportTest extends TestCase
         $this->assertSame('sendkit', (string) $transport);
     }
 
+    public function testGetTransportWithLocalKey(): void
+    {
+        $container = new Container;
+
+        $container->singleton('config', function () {
+            return new Repository([
+                'services' => [
+                    'sendkit' => [
+                        'key' => 'sk_services_key',
+                    ],
+                ],
+            ]);
+        });
+
+        $manager = new MailManager($container);
+
+        // When key is provided in the mailer config, it takes precedence.
+        $transport = $manager->createSymfonyTransport([
+            'transport' => 'sendkit',
+            'key' => 'sk_local_key',
+        ]);
+
+        $this->assertInstanceOf(SendKitTransport::class, $transport);
+    }
+
     public function testSend(): void
     {
         $message = new Email;
@@ -74,8 +99,7 @@ class MailSendKitTransportTest extends TestCase
         $client = m::mock(Client::class);
         $client->shouldReceive('emails')->andReturn($emails);
 
-        $transport = new SendKitTransport($client);
-        $transport->send($message);
+        (new SendKitTransport($client))->send($message);
 
         $this->assertSame('sender@example.com', $capturedPayload['from']);
         $this->assertSame(['recipient@example.com'], $capturedPayload['to']);
@@ -88,6 +112,64 @@ class MailSendKitTransportTest extends TestCase
         $this->assertSame([['name' => 'campaign', 'value' => 'welcome']], $capturedPayload['tags']);
         $this->assertArrayNotHasKey('scheduled_at', $capturedPayload);
         $this->assertArrayNotHasKey('attachments', $capturedPayload);
+    }
+
+    public function testSendHtmlOnly(): void
+    {
+        $message = new Email;
+        $message->subject('Test');
+        $message->html('<p>Hello</p>');
+        $message->sender('sender@example.com');
+        $message->to('recipient@example.com');
+
+        $capturedPayload = null;
+
+        $emails = m::mock(Emails::class);
+        $emails->shouldReceive('send')
+            ->once()
+            ->withArgs(function ($payload) use (&$capturedPayload) {
+                $capturedPayload = $payload;
+
+                return true;
+            })
+            ->andReturn(['id' => 'html-id']);
+
+        $client = m::mock(Client::class);
+        $client->shouldReceive('emails')->andReturn($emails);
+
+        (new SendKitTransport($client))->send($message);
+
+        $this->assertSame('<p>Hello</p>', $capturedPayload['html']);
+        $this->assertArrayNotHasKey('text', $capturedPayload);
+    }
+
+    public function testSendTextOnly(): void
+    {
+        $message = new Email;
+        $message->subject('Test');
+        $message->text('Hello');
+        $message->sender('sender@example.com');
+        $message->to('recipient@example.com');
+
+        $capturedPayload = null;
+
+        $emails = m::mock(Emails::class);
+        $emails->shouldReceive('send')
+            ->once()
+            ->withArgs(function ($payload) use (&$capturedPayload) {
+                $capturedPayload = $payload;
+
+                return true;
+            })
+            ->andReturn(['id' => 'text-id']);
+
+        $client = m::mock(Client::class);
+        $client->shouldReceive('emails')->andReturn($emails);
+
+        (new SendKitTransport($client))->send($message);
+
+        $this->assertSame('Hello', $capturedPayload['text']);
+        $this->assertArrayNotHasKey('html', $capturedPayload);
     }
 
     public function testSendWithMultipleRecipients(): void
@@ -113,10 +195,40 @@ class MailSendKitTransportTest extends TestCase
         $client = m::mock(Client::class);
         $client->shouldReceive('emails')->andReturn($emails);
 
-        $transport = new SendKitTransport($client);
-        $transport->send($message);
+        (new SendKitTransport($client))->send($message);
 
         $this->assertSame(['one@example.com', 'two@example.com'], $capturedPayload['to']);
+        $this->assertArrayNotHasKey('cc', $capturedPayload);
+        $this->assertArrayNotHasKey('bcc', $capturedPayload);
+    }
+
+    public function testSendWithNamedAddresses(): void
+    {
+        $message = new Email;
+        $message->subject('Test');
+        $message->text('Hello');
+        $message->from(new Address('sender@example.com', 'Sender Name'));
+        $message->to(new Address('recipient@example.com', 'Recipient'));
+
+        $capturedPayload = null;
+
+        $emails = m::mock(Emails::class);
+        $emails->shouldReceive('send')
+            ->once()
+            ->withArgs(function ($payload) use (&$capturedPayload) {
+                $capturedPayload = $payload;
+
+                return true;
+            })
+            ->andReturn(['id' => 'named-id']);
+
+        $client = m::mock(Client::class);
+        $client->shouldReceive('emails')->andReturn($emails);
+
+        (new SendKitTransport($client))->send($message);
+
+        $this->assertSame('"Sender Name" <sender@example.com>', $capturedPayload['from']);
+        $this->assertSame(['"Recipient" <recipient@example.com>'], $capturedPayload['to']);
     }
 
     public function testSendWithScheduledAt(): void
@@ -128,19 +240,25 @@ class MailSendKitTransportTest extends TestCase
         $message->to('recipient@example.com');
         $message->getHeaders()->addTextHeader('X-SendKit-Scheduled-At', '2026-12-25T10:00:00Z');
 
+        $capturedPayload = null;
+
         $emails = m::mock(Emails::class);
         $emails->shouldReceive('send')
             ->once()
-            ->with(m::on(function ($payload) {
-                return $payload['scheduled_at'] === '2026-12-25T10:00:00Z'
-                    && ! isset($payload['headers']['X-SendKit-Scheduled-At']);
-            }))
+            ->withArgs(function ($payload) use (&$capturedPayload) {
+                $capturedPayload = $payload;
+
+                return true;
+            })
             ->andReturn(['id' => 'scheduled-id']);
 
         $client = m::mock(Client::class);
         $client->shouldReceive('emails')->andReturn($emails);
 
         (new SendKitTransport($client))->send($message);
+
+        $this->assertSame('2026-12-25T10:00:00Z', $capturedPayload['scheduled_at']);
+        $this->assertArrayNotHasKey('X-SendKit-Scheduled-At', $capturedPayload['headers'] ?? []);
     }
 
     public function testSendError(): void
@@ -161,31 +279,6 @@ class MailSendKitTransportTest extends TestCase
 
         $this->expectException(TransportException::class);
         $this->expectExceptionMessage('Request to SendKit API failed. Reason: Invalid API key.');
-
-        (new SendKitTransport($client))->send($message);
-    }
-
-    public function testSendWithNamedAddresses(): void
-    {
-        $message = new Email;
-        $message->subject('Test');
-        $message->text('Hello');
-        $message->from(new Address('sender@example.com', 'Sender Name'));
-        $message->to(new Address('recipient@example.com', 'Recipient'));
-
-        $emails = m::mock(Emails::class);
-        $emails->shouldReceive('send')
-            ->once()
-            ->with(m::on(function ($payload) {
-                return str_contains($payload['from'], 'sender@example.com')
-                    && str_contains($payload['from'], 'Sender Name')
-                    && str_contains($payload['to'][0], 'recipient@example.com')
-                    && str_contains($payload['to'][0], 'Recipient');
-            }))
-            ->andReturn(['id' => 'named-id']);
-
-        $client = m::mock(Client::class);
-        $client->shouldReceive('emails')->andReturn($emails);
 
         (new SendKitTransport($client))->send($message);
     }
